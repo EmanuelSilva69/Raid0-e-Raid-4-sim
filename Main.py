@@ -1,77 +1,9 @@
-import types
+import warnings
 from abc import abstractmethod, ABCMeta #esse import serve pra gerar as Classes Base Abstratas, pra herança
 import sys
 from argparse import *
 import time
 bin_format = '#010b'  # isso daqui é o formato binário para armazenar dados. '#010b' = 8 bits/1 byte sem incluir '0b' anexado
-#hd de denisson---------------------------------------------------------------------------------------------
-import psutil
-import matplotlib.pyplot as plt
-
-def get_disk_usage():
-    """
-    Obtém o uso do disco do diretório raiz.
-
-    Returns:
-    dict: Um dicionário contendo o total, usado e livre espaço em disco em bytes.
-    """
-    # Obtém as informações de uso do disco para o diretório raiz
-    usage = psutil.disk_usage('/')
-    # Retorna as informações em um formato de dicionário
-    return {
-        'total': usage.total,
-        'used': usage.used,
-        'free': usage.free
-    }
-
-def format_size(bytes):
-    """
-    Formata o tamanho em bytes para uma string legível (KB, MB, GB, TB).
-
-    Args:
-    bytes (int): Tamanho em bytes.
-
-    Returns:
-    str: Tamanho formatado como uma string legível.
-    """
-    # Define os sufixos para os diferentes tamanhos
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if bytes < 1024:
-            return f"{bytes:.2f} {unit}"
-        bytes /= 1024
-
-def plot_disk_usage(usage):
-    """
-    Plota o uso do disco em um gráfico de pizza.
-
-    Args:
-    usage (dict): Dicionário contendo informações sobre o uso do disco.
-    """
-    # Extrai os valores usados e livres
-    labels = ['Usado', 'Livre']
-    sizes = [usage['used'], usage['free']]
-    # Define as cores para cada seção do gráfico
-    colors = ['#ff9999','#66b3ff']
-    # Define a explosão para destacar a seção 'Usado'
-    explode = (0.1, 0)
-
-    # Cria o gráfico de pizza
-    plt.pie(sizes, explode=explode, labels=labels, colors=colors,
-            autopct='%1.1f%%', shadow=True, startangle=140)
-    plt.axis('equal')  # Assegura que o gráfico seja desenhado como um círculo
-
-    # Adiciona um título ao gráfico
-    plt.title('Uso do Disco')
-
-    # Adiciona a legenda com as informações de tamanho total, usado e livre
-    plt.legend([
-        f"Total: {format_size(usage['total'])}",
-        f"Usado: {format_size(usage['used'])}",
-        f"Livre: {format_size(usage['free'])}"
-    ], loc="upper right")
-
-    # Mostra o gráfico
-    plt.show()
 #coisinha dos 3 pontinhos que eu to botando sem motivo nenhum!!
 def mensagembase(n):
     print('\b' * n + ' ' * n + '\b' * n, end='', flush=True)
@@ -440,7 +372,7 @@ class ControladorRAID4:
             print("|", end="")
             for f in self.arquivos:
                 if i == f.start_addr:
-                    print("'\033[34m'<- Arquivo número:  " + repr(f.id)+'\033[0m', end="")
+                    print("'\033[34m'<- Arquivo número:  " + repr(f.id + 1)+'\033[0m', end="") #botei um mais 1 ai pra ficar melhor pra visualizar (Arquivo 0 é feio)
             print()
         print()
     #função para calcular o bit de paridade para o bloco. Precisamos converter as strings bin em inteiros para usar a manipulação de bits para calcular o XOR (já falei isso lá em cima ent n muda muita coisa.)
@@ -459,12 +391,136 @@ class ControladorRAID4:
             if calculated_parity != int(parity, 2):
                 raise ParityCalculationException(block, calculated_parity, int(parity, 2))
             block.insert(i, parity)
+#-------------------------------------------------------------------------------------------------------------------------------------------------
+class ControladorRAID0:
+    __metaclass__ = ControladorRAID #fazendo a herança dos dados da classe abstrata ControladorRAID
+    disks = []
+    arquivos = []
+
+    def __init__(self, num_disks,
+                 disk_cap=0):  # atribui um valor para a variavel do numero de disco e o máximo de disco.
+        self.num_disks = num_disks
+        self.disk_cap = disk_cap
+        for i in range(num_disks):
+            self.disks.append(Disco(i, disk_cap))
+
+        # leitura do disco do inicio
+
+    def __len__(self):
+        return len(self.disks[0])
+    def validar_disco(self, orig_disks=None):
+        for i in range(len(self)):
+            # Esse comando  Valida a paridade de um bloco removendo cada item em sequência, calculando a paridade dos itens restantes  e comparando o resultado com o item removido.
+            self.validar_paridade(self.get_linhacd(i))
+        if orig_disks is not None:
+            for i in range(len(orig_disks)):
+                if orig_disks[i] != self.disks[i]:
+                    raise DiskReconstructException("Reconstrução de disco falhou: Disco " + repr(i) + " está corrompido")
+    def get_linhacd(self, index):
+        block = []
+        for i in range(len(self.disks)):
+            try:
+                block.append(self.disks[i].read(index))
+            except IndexError:
+                print(
+                    "Este erro é gerado quando o valor do índice fornecido é negativo ou excede o comprimento da sequência")
+                pass
+        return block
+
+    @staticmethod
+    def validar_paridade(block):
+        waiting_dots(4, message=('\033[36m'+"é o fim"+'\033[0m'), final_message="\033[33m"+"Não há mais nada que se possa fazer"+"\033[0m")
+        quit()
+#!!!! repeti a parte acima pq n sei como fazer a herança de forma correta no python!!!
+    #escreve uma sequencia de bits nos discos de RAID
+
+    def escreve_parte(self,data):
+        blocks = split_data(data, len(self.disks))
+        for x in blocks:
+    #o negócio aqui de paridade não é usado, então foi excluido!
+        #Escreve cada bloco de texto nos discos
+            for i in range(len(x)):
+                self.disks[i].write(x[i])
+    #Isso lê todos os dados nos discos, ignorando bits de paridade e preenchimento. Não leva em conta discos ausentes. (vai dar erro sse tiver algo ausente e é isso.)
+    def ler_todos_dados(self):
+        ret_str = ''
+        for i in range(len(self)):
+            for j in range(len(self.disks)):
+                ret_str += chr(int(self.disks[j].read(i), 2))  #Converte a string binária para inteiros, e depois para caracteres
+            for k in range(len(self.arquivos)):
+                if i == self.arquivos[k].start_addr - 1:
+                    ret_str = ret_str[:len(ret_str) - self.arquivos[k - 1].padding]
+
+        ret_str = ret_str[:len(ret_str) - self.arquivos[-1].padding]
+        return ret_str
+    # Isso lê todos os arquivos nos discos, ignorando bits de paridade e preenchimento. Não leva em conta discos ausentes. -> (vai dar erro)
+    def ler_todos_arquivos(self):
+        ret_bits = []
+        ret_arquivos = []
+        for i in range(len(self)):
+            for j in range(self.num_disks):
+                try:
+                    ret_bits.append(self.disks[j].read(i))
+                except IndexError:
+                    pass
+            for k in range(len(self.arquivos)):
+                if i == self.arquivos[k].start_addr - 1:
+                    ret_bits = ret_bits[:len(ret_bits) - self.arquivos[k - 1].padding]
+                    ret_arquivos.append(ArquivosdeRAID.from_bits(k - 1, ret_bits))
+                    ret_bits = []
+
+        ret_bits = ret_bits[:len(ret_bits) - self.arquivos[-1].padding]
+        ret_arquivos.append(ArquivosdeRAID.from_bits(self.arquivos[-1].id, ret_bits))
+        return ret_arquivos
+
+    # Simula uma falha de disco, por meio de uma remoção dele da lista
+    def falhar_disco(self,disk_num):
+        print('\033[31m'+"Disco " + repr(disk_num) + " falhou!!"+'\033[0m\n')
+        del self.disks[disk_num]
+        waiting_dots(9, message=('\033[32m'+"Esse disco tá perdido"+'\033[0m'), final_message="\033[31m"+"BEM PERDIDO!"+"\033[0m\n")
+
+
+    #Reconstroi o disco que foi falhado no comando acima (Fake News!!)
+    def reconstruir_disco(self, disk_num):
+        warnings.warn("Raid0 Não suporta reconstrução de disco!!!")
+    #função para imprimir no terminal os dados em binário.
+    def print_data(self):
+        for x in self.disks:
+            print("|   " + repr(x.disk_id) + "    ", end="")
+        print("|")
+        for i in range(len(self.disks)):
+            print("---------", end="")
+        print("-")
+        for i in range(len(self.disks[0])):
+            for j in range(len(self.disks)):
+                if i < len(self.disks[j]):
+                    print("|" + self.disks[j].read(i)[2:], end="")
+            print(end="")
+            for f in self.arquivos:
+                if i == f.start_addr:
+                    print("'\033[34m'<- Arquivo número:  " + repr(f.id+1)+'\033[0m', end="") #botei um mais 1 ai pra ficar melhor pra visualizar (Arquivo 0 é feio)
+            print()
+        print()
+    #Função da escrita diferente porque não tem paridade
+    def escreve_arquivo(self, arq):
+        if len(self.arquivos) == 0: #arquivo vazio
+            arq.start_addr = 0
+        else:
+            arq.start_addr = len(self) #arquivo não vazio
+
+        self.arquivos.append(arq)
+        blocks = list(split_data(arq.data_B, len(self.disks))) #separa os dados do arquivo em blocos
+        arq.padding = len(self.disks) - len(blocks[-1]) #separa os blocos um do outro, para n ficar um monte de número binário desorganizado
+        self.escreve_parte(arq.data_B + [format(0, '#010b')] * arq.padding) #escreve o fragmento de texto no hd
+
+
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #codigo da main aqui
 arquivos = []
 lista=[]
 o=0
-x=int(input("digite o número de discos (max 5)\n"))
+nivel=int(input("Qual tipo de Simulação de Raid quer realizar? (0 ou 4)\n"))
+x=int(input("digite o número de discos (numero baixo (uns 2) se for pra Raid 0)\n"))
 y=int(input("digite o limite de discos (0 é o comum(ilimitado))\n"))
 h=int(input("quantas frases a serem digitadas?\n"))
 for o in range(0,h):
@@ -475,6 +531,7 @@ k=int(input("digite qual disco deve falhar.\n"))
 falhartudo=int(input("quer falhar TODOS os discos? (0 pra não, 1 para sim)\n"))
 m = bool(input("Deseja reconstruir o disco? True para sim e False(ou deixe em branco) pra não\n"))
 pause = m
+
 waiting_dots(6, message="\033[36m"+"configurando"+'\033[0m', final_message="terminado!")
 def main():
 #vou tentar fazer um código de Parser aqui pra ficar mais fácil a mudança dos dados, poderia ser feito pros outros argumentos, vou deixar comentado caso queira usar posteriomente
@@ -491,7 +548,13 @@ def main():
         print("Capacidade do disco não pode ser menor que 0 bytes.")
     if falha >= num_disks:
         print ("não pode falhar o dico:  " + repr(falha) + ": Pois é um número invalido de disco")
-    controller = ControladorRAID4(num_disks,disk_cap)
+    #escolhe qual das duas raids devem ser escolhidas
+    if nivel == 4:
+        controller = ControladorRAID4(num_disks,disk_cap)
+    elif nivel == 0:
+        controller = ControladorRAID0(num_disks,disk_cap)
+    else:
+        print("escolha um nível correto.")
     #Escrever os arquivos no raid
     for i in range(len(data)):
         f = ArquivosdeRAID(i, data[i])
@@ -529,5 +592,3 @@ def fail_disks(disks, controller, orig_disks, pause=False):
         except DiskReconstructException as e:
             print(e.msg)
 main()
-#usage = get_disk_usage() -> esses comandos pegam o hd do pc, e não fazem uma imagem da simulação
-#plot_disk_usage(usage)
